@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>한국 주식 대시보드</title>
+
+  <!-- Google Fonts: Pretendard (한글) + JetBrains Mono (숫자) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Plotly.js CDN -->
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+
+  <style>
+    /* ════════════════════════════════════════
+       CSS 변수 & 리셋
+    ════════════════════════════════════════ */
+    :root {
+      --bg:          #0a0e17;
+      --surface:     #111827;
+      --surface2:    #1a2235;
+      --border:      #1e2d45;
+      --accent:      #00d4ff;
+      --accent2:     #7c3aed;
+      --up:          #00e5a0;
+      --down:        #ff4d6d;
+      --text:        #e2e8f0;
+      --text-dim:    #64748b;
+      --text-muted:  #94a3b8;
+      --mono:        'JetBrains Mono', monospace;
+      --radius:      12px;
+      --glow:        0 0 20px rgba(0,212,255,0.15);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.6;
+      background-image:
+        radial-gradient(ellipse at 20% 0%, rgba(0,212,255,0.05) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 100%, rgba(124,58,237,0.05) 0%, transparent 50%);
+    }
+
+    /* ════════════════════════════════════════
+       헤더
+    ════════════════════════════════════════ */
+    .header {
+      padding: 24px 32px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      backdrop-filter: blur(10px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(10,14,23,0.9);
+    }
+
+    .header-logo {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+
+    .header h1 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .header h1 span {
+      color: var(--accent);
+    }
+
+    .header-sub {
+      margin-left: auto;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      font-family: var(--mono);
+    }
+
+    /* ════════════════════════════════════════
+       메인 레이아웃
+    ════════════════════════════════════════ */
+    .main {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+
+    /* ════════════════════════════════════════
+       검색 섹션
+    ════════════════════════════════════════ */
+    .search-section {
+      margin-bottom: 40px;
+      text-align: center;
+    }
+
+    .search-title {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, var(--text) 0%, var(--accent) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .search-subtitle {
+      color: var(--text-dim);
+      font-size: 0.9rem;
+      margin-bottom: 28px;
+    }
+
+    .search-wrapper {
+      display: flex;
+      gap: 12px;
+      max-width: 560px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .search-input-wrap {
+      position: relative;
+      flex: 1;
+    }
+
+    #tickerInput {
+      width: 100%;
+      padding: 14px 20px;
+      font-size: 1rem;
+      font-family: var(--mono);
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    #tickerInput::placeholder { color: var(--text-dim); font-weight: 400; letter-spacing: 0; }
+
+    #tickerInput:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(0,212,255,0.1);
+    }
+
+    /* 자동완성 드롭다운 */
+    #autocomplete {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0; right: 0;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      z-index: 200;
+      display: none;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    .ac-item {
+      padding: 10px 16px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: background 0.15s;
+      font-size: 0.875rem;
+    }
+
+    .ac-item:hover { background: var(--border); }
+
+    .ac-ticker {
+      font-family: var(--mono);
+      font-weight: 700;
+      color: var(--accent);
+      font-size: 0.8rem;
+    }
+
+    .ac-name { color: var(--text-muted); }
+
+    #searchBtn {
+      padding: 14px 28px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), #0099cc);
+      color: #000;
+      border: none;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.15s;
+      white-space: nowrap;
+    }
+
+    #searchBtn:hover { opacity: 0.9; transform: translateY(-1px); }
+    #searchBtn:active { transform: translateY(0); }
+    #searchBtn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    /* 인기 종목 태그 */
+    .popular-tags {
+      margin-top: 16px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .tag {
+      padding: 5px 12px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 99px;
+      font-size: 0.78rem;
+      font-family: var(--mono);
+      cursor: pointer;
+      transition: all 0.15s;
+      color: var(--text-muted);
+    }
+
+    .tag:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(0,212,255,0.05);
+    }
+
+    /* ════════════════════════════════════════
+       로딩 / 에러 상태
+    ════════════════════════════════════════ */
+    #statusMsg {
+      display: none;
+      text-align: center;
+      padding: 48px;
+    }
+
+    .spinner {
+      width: 44px; height: 44px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .status-text { color: var(--text-muted); font-size: 0.9rem; }
+
+    .error-box {
+      display: none;
+      max-width: 500px;
+      margin: 0 auto;
+      background: rgba(255,77,109,0.08);
+      border: 1px solid rgba(255,77,109,0.3);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      text-align: center;
+    }
+
+    .error-box .error-icon { font-size: 2rem; margin-bottom: 8px; }
+    .error-box p { color: #ff8099; font-size: 0.9rem; }
+
+    /* ════════════════════════════════════════
+       대시보드 컨테이너
+    ════════════════════════════════════════ */
+    #dashboard { display: none; }
+
+    /* ── 종목 헤더 카드 ── */
+    .stock-header-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: flex-start;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .stock-title-block { flex: 1; min-width: 200px; }
+
+    .stock-name {
+      font-size: 1.5rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 4px;
+    }
+
+    .stock-ticker-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      background: rgba(0,212,255,0.1);
+      border: 1px solid rgba(0,212,255,0.3);
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      color: var(--accent);
+      margin-right: 8px;
+    }
+
+    .stock-meta { font-size: 0.82rem; color: var(--text-dim); margin-top: 6px; }
+
+    .price-block { text-align: right; }
+
+    .current-price {
+      font-family: var(--mono);
+      font-size: 2.2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .price-change {
+      font-family: var(--mono);
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-top: 4px;
+    }
+
+    .price-change.up   { color: var(--up); }
+    .price-change.down { color: var(--down); }
+
+    /* ── 재무지표 그리드 ── */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+
+    .metric-card:hover {
+      border-color: rgba(0,212,255,0.3);
+      transform: translateY(-2px);
+    }
+
+    .metric-label {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+
+    .metric-value {
+      font-family: var(--mono);
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* ── 차트 카드 ── */
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 20px 8px;
+      margin-bottom: 20px;
+    }
+
+    .chart-card-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .chart-card-title::before {
+      content: '';
+      display: inline-block;
+      width: 3px; height: 14px;
+      background: var(--accent);
+      border-radius: 2px;
+    }
+
+    .chart-container { width: 100%; }
+
+    /* ════════════════════════════════════════
+       반응형
+    ════════════════════════════════════════ */
+    @media (max-width: 640px) {
+      .header { padding: 16px 20px; }
+      .header-sub { display: none; }
+      .main { padding: 24px 16px; }
+      .search-title { font-size: 1.5rem; }
+      .stock-header-card { flex-direction: column; gap: 12px; }
+      .price-block { text-align: left; }
+      .current-price { font-size: 1.6rem; }
+      .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* 진입 애니메이션 */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .fade-up { animation: fadeUp 0.4s ease forwards; }
+    .fade-up-d1 { animation-delay: 0.05s; opacity: 0; }
+    .fade-up-d2 { animation-delay: 0.10s; opacity: 0; }
+    .fade-up-d3 { animation-delay: 0.18s; opacity: 0; }
+    .fade-up-d4 { animation-delay: 0.26s; opacity: 0; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════ 헤더 ══════════════ -->
+<header class="header">
+  <div class="header-logo">📈</div>
+  <h1>KR<span>Stock</span></h1>
+  <span class="header-sub">Yahoo Finance · Real-time Data</span>
+</header>
+
+<!-- ══════════════ 메인 ══════════════ -->
+<main class="main">
+
+  <!-- 검색 섹션 -->
+  <section class="search-section">
+    <h2 class="search-title">한국 주식 대시보드</h2>
+    <p class="search-subtitle">티커 코드를 입력하여 실시간 주가 및 재무지표를 확인하세요</p>
+
+    <div class="search-wrapper">
+      <div class="search-input-wrap">
+        <input
+          type="text"
+          id="tickerInput"
+          placeholder="예: 005930.KS"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <div id="autocomplete"></div>
+      </div>
+      <button id="searchBtn" onclick="loadStock()">조회</button>
+    </div>
+
+    <!-- 인기 종목 빠른 선택 -->
+    <div class="popular-tags">
+      <span class="tag" onclick="quickSearch('005930.KS')">삼성전자</span>
+      <span class="tag" onclick="quickSearch('000660.KS')">SK하이닉스</span>
+      <span class="tag" onclick="quickSearch('035420.KS')">NAVER</span>
+      <span class="tag" onclick="quickSearch('035720.KS')">카카오</span>
+      <span class="tag" onclick="quickSearch('005380.KS')">현대차</span>
+      <span class="tag" onclick="quickSearch('068270.KS')">셀트리온</span>
+    </div>
+  </section>
+
+  <!-- 로딩 표시 -->
+  <div id="statusMsg">
+    <div class="spinner"></div>
+    <p class="status-text" id="loadingText">데이터를 불러오는 중...</p>
+  </div>
+
+  <!-- 에러 표시 -->
+  <div class="error-box" id="errorBox">
+    <div class="error-icon">⚠️</div>
+    <p id="errorText"></p>
+  </div>
+
+  <!-- ══ 대시보드 (데이터 로드 후 표시) ══ -->
+  <div id="dashboard">
+
+    <!-- 종목 헤더 카드 -->
+    <div class="stock-header-card fade-up fade-up-d1">
+      <div class="stock-title-block">
+        <div class="stock-name" id="stockName">—</div>
+        <div style="margin-top:6px;">
+          <span class="stock-ticker-badge" id="stockTicker">—</span>
+        </div>
+        <div class="stock-meta" id="stockMeta">—</div>
+      </div>
+      <div class="price-block">
+        <div class="current-price" id="currentPrice">—</div>
+        <div class="price-change" id="priceChange">—</div>
+      </div>
+    </div>
+
+    <!-- 재무지표 그리드 -->
+    <div class="metrics-grid fade-up fade-up-d2" id="metricsGrid">
+      <!-- JS로 동적 생성 -->
+    </div>
+
+    <!-- 주가 차트 -->
+    <div class="chart-card fade-up fade-up-d3">
+      <div class="chart-card-title">최근 1년 주가 차트 (시가 / 종가)</div>
+      <div class="chart-container">
+        <div id="priceChart"></div>
+      </div>
+    </div>
+
+    <!-- 거래량 차트 -->
+    <div class="chart-card fade-up fade-up-d4">
+      <div class="chart-card-title">거래량</div>
+      <div class="chart-container">
+        <div id="volumeChart"></div>
+      </div>
+    </div>
+
+  </div><!-- /#dashboard -->
+</main>
+
+<!-- ══════════════ JavaScript ══════════════ -->
+<script>
+/* ─────────────────────────────────────────────
+   상태 관리
+───────────────────────────────────────────── */
+const state = {
+  loading: false,
+};
+
+/* ─────────────────────────────────────────────
+   DOM 참조
+───────────────────────────────────────────── */
+const $input      = document.getElementById("tickerInput");
+const $searchBtn  = document.getElementById("searchBtn");
+const $statusMsg  = document.getElementById("statusMsg");
+const $errorBox   = document.getElementById("errorBox");
+const $errorText  = document.getElementById("errorText");
+const $dashboard  = document.getElementById("dashboard");
+const $autocomplete = document.getElementById("autocomplete");
+
+/* ─────────────────────────────────────────────
+   유틸리티
+───────────────────────────────────────────── */
+function showLoading() {
+  $statusMsg.style.display  = "block";
+  $errorBox.style.display   = "none";
+  $dashboard.style.display  = "none";
+  $searchBtn.disabled = true;
+  state.loading = true;
+}
+
+function hideLoading() {
+  $statusMsg.style.display = "none";
+  $searchBtn.disabled = false;
+  state.loading = false;
+}
+
+function showError(msg) {
+  hideLoading();
+  $errorText.textContent    = msg;
+  $errorBox.style.display   = "block";
+  $dashboard.style.display  = "none";
+}
+
+function showDashboard() {
+  hideLoading();
+  $errorBox.style.display  = "none";
+  $dashboard.style.display = "block";
+}
+
+/* ─────────────────────────────────────────────
+   빠른 검색 (태그 클릭)
+───────────────────────────────────────────── */
+function quickSearch(ticker) {
+  $input.value = ticker;
+  loadStock();
+}
+
+/* ─────────────────────────────────────────────
+   자동완성
+───────────────────────────────────────────── */
+$input.addEventListener("input", async () => {
+  const q = $input.value.trim();
+  if (q.length < 1) { $autocomplete.style.display = "none"; return; }
+
+  try {
+    const res  = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    if (!data.length) { $autocomplete.style.display = "none"; return; }
+
+    $autocomplete.innerHTML = data.slice(0, 6).map(s => `
+      <div class="ac-item" onclick="quickSearch('${s.ticker}')">
+        <span class="ac-name">${s.name}</span>
+        <span class="ac-ticker">${s.ticker}</span>
+      </div>
+    `).join("");
+    $autocomplete.style.display = "block";
+  } catch { $autocomplete.style.display = "none"; }
+});
+
+// 바깥 클릭 시 자동완성 닫기
+document.addEventListener("click", (e) => {
+  if (!$input.contains(e.target)) $autocomplete.style.display = "none";
+});
+
+// Enter 키로 검색
+$input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { $autocomplete.style.display = "none"; loadStock(); }
+});
+
+/* ─────────────────────────────────────────────
+   메인: 주식 데이터 로드
+───────────────────────────────────────────── */
+async function loadStock() {
+  if (state.loading) return;
+
+  const ticker = $input.value.trim().toUpperCase();
+  if (!ticker) { showError("티커 코드를 입력해주세요. (예: 005930.KS)"); return; }
+
+  showLoading();
+  $autocomplete.style.display = "none";
+
+  try {
+    const res  = await fetch(`/api/stock/${encodeURIComponent(ticker)}`);
+    const data = await res.json();
+
+    if (!res.ok) {
+      showError(data.error || "알 수 없는 오류가 발생했습니다.");
+      return;
+    }
+
+    renderDashboard(data);
+    showDashboard();
+
+  } catch (err) {
+    showError("서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.");
+    console.error(err);
+  }
+}
+
+/* ─────────────────────────────────────────────
+   대시보드 렌더링
+───────────────────────────────────────────── */
+function renderDashboard(data) {
+  const { ticker, price_data, volume_data, financials: f } = data;
+
+  // ── 종목 헤더 ──
+  document.getElementById("stockName").textContent   = f.company_name;
+  document.getElementById("stockTicker").textContent = ticker;
+  document.getElementById("currentPrice").textContent = f.current_price;
+  document.getElementById("stockMeta").textContent =
+    `${f.sector} · ${f.industry} · 통화: ${f.currency}`;
+
+  const $change = document.getElementById("priceChange");
+  $change.textContent = `${f.price_change}  (${f.price_change_pct})`;
+  $change.className   = "price-change " + (f.is_positive ? "up" : "down");
+
+  // ── 재무지표 카드 ──
+  const metrics = [
+    { label: "시가총액",    value: f.market_cap   },
+    { label: "PER",         value: f.per           },
+    { label: "PBR",         value: f.pbr           },
+    { label: "EPS",         value: f.eps           },
+    { label: "배당수익률",  value: f.dividend_yield },
+    { label: "52주 최고",   value: f["52w_high"]   },
+    { label: "52주 최저",   value: f["52w_low"]    },
+    { label: "평균 거래량", value: f.avg_volume    },
+  ];
+
+  document.getElementById("metricsGrid").innerHTML = metrics.map(m => `
+    <div class="metric-card">
+      <div class="metric-label">${m.label}</div>
+      <div class="metric-value">${m.value}</div>
+    </div>
+  `).join("");
+
+  // ── 차트 렌더링 ──
+  renderPriceChart(price_data);
+  renderVolumeChart(volume_data);
+}
+
+/* ─────────────────────────────────────────────
+   Plotly 주가 차트
+───────────────────────────────────────────── */
+function renderPriceChart(pd) {
+  const layout = getBaseLayout();
+  layout.yaxis.title = "가격 (원)";
+  layout.legend = { orientation: "h", y: 1.08, x: 0, font: { size: 11, color: "#94a3b8" } };
+
+  const traces = [
+    {
+      x: pd.dates, y: pd.open,
+      type: "scatter", mode: "lines",
+      name: "시가",
+      line: { color: "#94a3b8", width: 1.2, dash: "dot" },
+    },
+    {
+      x: pd.dates, y: pd.close,
+      type: "scatter", mode: "lines",
+      name: "종가",
+      line: { color: "#00d4ff", width: 2 },
+      fill: "tozeroy",
+      fillcolor: "rgba(0,212,255,0.05)",
+    },
+  ];
+
+  Plotly.newPlot("priceChart", traces, layout, { responsive: true, displayModeBar: false });
+}
+
+/* ─────────────────────────────────────────────
+   Plotly 거래량 차트
+───────────────────────────────────────────── */
+function renderVolumeChart(vd) {
+  const layout = getBaseLayout();
+  layout.yaxis.title = "거래량";
+
+  // 거래량 색상: 전날보다 오르면 초록, 내리면 빨강
+  const colors = vd.volumes.map((v, i) =>
+    i === 0 ? "#00e5a0" : (v >= vd.volumes[i - 1] ? "#00e5a0" : "#ff4d6d")
+  );
+
+  const traces = [{
+    x: vd.dates, y: vd.volumes,
+    type: "bar",
+    name: "거래량",
+    marker: { color: colors, opacity: 0.75 },
+  }];
+
+  Plotly.newPlot("volumeChart", traces, layout, { responsive: true, displayModeBar: false });
+}
+
+/* ─────────────────────────────────────────────
+   Plotly 공통 레이아웃
+───────────────────────────────────────────── */
+function getBaseLayout() {
+  return {
+    paper_bgcolor: "transparent",
+    plot_bgcolor:  "transparent",
+    font: { family: "'JetBrains Mono', monospace", color: "#94a3b8", size: 11 },
+    height: 320,
+    margin: { l: 60, r: 20, t: 10, b: 50 },
+    xaxis: {
+      gridcolor:   "#1e2d45",
+      linecolor:   "#1e2d45",
+      tickfont:    { size: 10 },
+      showspikes:  true,
+      spikecolor:  "#374151",
+      spikethickness: 1,
+    },
+    yaxis: {
+      gridcolor:   "#1e2d45",
+      linecolor:   "#1e2d45",
+      tickfont:    { size: 10 },
+      showspikes:  true,
+      spikecolor:  "#374151",
+      spikethickness: 1,
+    },
+    hovermode:   "x unified",
+    hoverlabel: {
+      bgcolor:    "#1a2235",
+      bordercolor:"#1e2d45",
+      font: { family: "'JetBrains Mono', monospace", size: 12, color: "#e2e8f0" },
+    },
+  };
+}
+</script>
+</body>
+</html>
